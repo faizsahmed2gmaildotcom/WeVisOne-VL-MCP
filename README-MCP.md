@@ -11,7 +11,241 @@ model is loaded for the call and released before the call returns.
 
 ## Installation
 
-TODO: installation and client registration instructions.
+### 1. Install the Python environment
+
+The server needs Python 3.10 or newer, the project dependencies, and the MCP
+packages. A CUDA-capable GPU is strongly recommended; the 2B model needs about
+4.7 GB of VRAM.
+
+```bash
+git clone https://github.com/faizsahmed2gmaildotcom/WeVisOne-VL-MCP.git
+cd WeVisOne-VL-MCP
+
+conda create -n wevisone-vl-mcp python=3.12 -y
+conda activate wevisone-vl-mcp
+
+pip install -e .
+pip install -r mcp/requirements.txt
+```
+
+Check that torch can see the GPU:
+
+```bash
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+If that prints `False`, install the CUDA build of torch for your driver before
+registering the server. CPU inference works but is very slow.
+
+### 2. Configure the server
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` if you need a different model, device or memory budget. On an 8 GB
+GPU, use the conservative values under [Known Issues](#cuda-out-of-memory-on-8-gb-gpus)
+before the first run. The server loads the repository-root `.env` itself, so
+client environment filtering does not matter. Process environment variables
+still override the file.
+
+The first call downloads `tencent/WeVisOne-VL-2B` (about 4.6 GB) into the
+Hugging Face cache. Later calls reuse it.
+
+### 3. Record absolute paths
+
+Agents start MCP servers without your interactive shell, so do not rely on
+`conda activate` or on `python` being on `PATH`. Resolve the two absolute paths
+once and use them in every client configuration:
+
+```bash
+cd /absolute/path/to/WeVisOne-VL-MCP
+export WEVISONE_PYTHON="$(which python)"
+export WEVISONE_SERVER="$(pwd)/mcp/wevisone_vl_mcp.py"
+echo "$WEVISONE_PYTHON"
+echo "$WEVISONE_SERVER"
+```
+
+The examples below use `/opt/wevisone-vl-mcp/bin/python` and
+`/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py` as placeholders. Replace them with
+your values.
+
+The server writes `wevisone_vl_outputs/` under its own working directory. Most
+clients start stdio servers in the project or session directory, which is the
+desired agent cwd. If a client lets you configure a working directory (Codex
+and OpenCode use `cwd`), set it to the workspace where results should appear,
+not to the repository root.
+
+The model is loaded and released on every call. The first call is slow because
+of the download and model load. The timeout examples below are deliberately
+generous.
+
+### 4. Register with your agent
+
+#### Claude Code
+
+User scope, from a terminal:
+
+```bash
+claude mcp add --scope user --transport stdio \
+  wevisone-vl -- \
+  /opt/wevisone-vl-mcp/bin/python \
+  /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py
+```
+
+Or add a project-scoped `.mcp.json` at the repository you want the agent to work
+in:
+
+```json
+{
+  "mcpServers": {
+    "wevisone-vl": {
+      "type": "stdio",
+      "command": "/opt/wevisone-vl-mcp/bin/python",
+      "args": ["/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"],
+      "timeout": 600000
+    }
+  }
+}
+```
+
+Check with `claude mcp list`, or run `/mcp` inside Claude Code. The `timeout` is
+in milliseconds.
+
+#### Codex
+
+```bash
+codex mcp add wevisone-vl -- \
+  /opt/wevisone-vl-mcp/bin/python \
+  /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py
+```
+
+The CLI creates the entry with Codex's default timeout. Add the timeout keys
+below to `~/.codex/config.toml`, or write the whole entry there directly:
+
+```toml
+[mcp_servers.wevisone-vl]
+command = "/opt/wevisone-vl-mcp/bin/python"
+args = ["/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"]
+startup_timeout_sec = 60
+tool_timeout_sec = 600
+```
+
+Codex defaults to a 60-second tool timeout, which is too short for a cold model
+load. Keep `tool_timeout_sec` at 600 or higher. Verify with `codex mcp list`.
+
+#### OpenCode
+
+Add the server to `opencode.json` at the project root, or to the global
+`~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "wevisone-vl": {
+      "type": "local",
+      "command": [
+        "/opt/wevisone-vl-mcp/bin/python",
+        "/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"
+      ],
+      "enabled": true,
+      "timeout": 600000
+    }
+  }
+}
+```
+
+OpenCode's MCP `timeout` is in milliseconds and applies to tool calls. Use the
+`wevisone-vl` tools in a prompt, or ask the agent to use the server by name.
+
+#### OpenClaw
+
+Stop the Gateway before changing its MCP registry, then add the server:
+
+```bash
+openclaw gateway stop
+
+openclaw mcp add wevisone-vl \
+  --command /opt/wevisone-vl-mcp/bin/python \
+  --arg /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py \
+  --cwd /absolute/path/to/your/workspace \
+  --timeout 600 \
+  --connect-timeout 120
+
+openclaw mcp doctor wevisone-vl --probe
+```
+
+Or edit `~/.openclaw/openclaw.json` (JSON5):
+
+```json5
+{
+  mcp: {
+    servers: {
+      "wevisone-vl": {
+        transport: "stdio",
+        enabled: true,
+        command: "/opt/wevisone-vl-mcp/bin/python",
+        args: ["/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"],
+        cwd: "/absolute/path/to/your/workspace",
+        connectionTimeoutMs: 120000,
+        requestTimeoutMs: 600000
+      }
+    }
+  }
+}
+```
+
+Set `cwd` to the workspace where you want `wevisone_vl_outputs/` written. Start
+the Gateway again after saving.
+
+#### Hermes
+
+Add the server under `mcp_servers` in `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  wevisone-vl:
+    command: "/opt/wevisone-vl-mcp/bin/python"
+    args:
+      - "/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"
+    timeout: 600
+    connect_timeout: 120
+    env:
+      WEVISONE_DEVICE: "cuda:0"
+```
+
+Alternatively:
+
+```bash
+hermes mcp add wevisone-vl \
+  --command /opt/wevisone-vl-mcp/bin/python \
+  --args /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py
+```
+
+Restart Hermes, then check with `hermes mcp test wevisone-vl`. Hermes starts the
+server in the session workspace by default, so artifacts follow the agent's
+current directory. The `env` block is optional because the server reads `.env`;
+it is useful when you want a per-agent device override.
+
+### 5. Smoke test
+
+Ask the agent to analyze a local image, for example:
+
+```text
+Use the wevisone-vl detection tool on /absolute/path/to/image.jpg
+with the query "person".
+```
+
+The result should contain the raw model text, an `Artifacts:` path, and an
+overlay image. You can also run the real end-to-end test without an agent:
+
+```bash
+python mcp/test_server.py
+```
+
+That test boots the server over stdio, calls the 2B model on the demo images,
+and checks artifacts, request logs and VRAM release.
 
 ## Using the skill
 
