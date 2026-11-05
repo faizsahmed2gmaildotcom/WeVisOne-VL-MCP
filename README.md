@@ -21,7 +21,7 @@ packages. A CUDA-capable GPU is strongly recommended; the 2B model needs about
 git clone https://github.com/faizsahmed2gmaildotcom/WeVisOne-VL-MCP.git
 cd WeVisOne-VL-MCP
 
-conda create -n wevisone-vl-mcp python=3.12 -y
+conda create -n wevisone-vl-mcp python=3.13.18 -y
 conda activate wevisone-vl-mcp
 
 pip install -e mcp
