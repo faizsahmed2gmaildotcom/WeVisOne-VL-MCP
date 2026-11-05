@@ -8,6 +8,7 @@ dist/
 build/
 outputs/
 evaluation/output/
+.idea
 
 # Checkpoints are published through a model hub, not Git.
 checkpoints/*
@@ -26,3 +27,9 @@ project_page/
 tests/
 tools/
 *.tex
+
+# MCP server runtime state.
+.env
+skill/logs/*
+!skill/logs/.gitkeep
+wevisone_vl_outputs/
