@@ -19,10 +19,10 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters, stdio_client
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parent
 SERVER_PATH = Path(__file__).with_name("wevisone_vl_mcp.py")
 IMAGE_DIR = PROJECT_ROOT / "demo" / "examples" / "images"
-LOG_PATH = PROJECT_ROOT / "skill" / "logs" / "requests.jsonl"
+LOG_PATH = PROJECT_ROOT / "logs" / "requests.jsonl"
 EXPECTED_TOOLS = {
     "detection",
     "referring",

@@ -1,0 +1,35 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+dist/
+build/
+outputs/
+evaluation/output/
+.idea
+
+# Checkpoints are published through a model hub, not Git.
+checkpoints/*
+!checkpoints/.gitkeep
+*.safetensors
+*.pt
+
+# Local checkpoint payload and the paper archive.
+*.zip
+paper/
+demo_code/
+promo_image/
+
+# Local project page, not part of the release repo.
+project_page/
+tests/
+tools/
+*.tex
+
+# MCP server runtime state.
+.env
+logs/*
+!logs/.gitkeep
+wevisone_vl_outputs/

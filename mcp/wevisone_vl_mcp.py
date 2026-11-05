@@ -24,9 +24,8 @@ from mcp.types import TextContent
 from PIL import Image as PILImage
 from pydantic import BaseModel, Field
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = PROJECT_ROOT / "skill"
-LOG_DIR = SKILL_ROOT / "logs"
+PROJECT_ROOT = Path(__file__).resolve().parent
+LOG_DIR = PROJECT_ROOT / "logs"
 LOG_PATH = LOG_DIR / "requests.jsonl"
 OUTPUT_ROOT_NAME = "wevisone_vl_outputs"
 DEFAULT_MODEL_ID = "tencent/WeVisOne-VL-2B"
@@ -107,9 +106,9 @@ BACKEND = os.environ.get("WEVISONE_BACKEND", "transformers")
 DEVICE = os.environ.get("WEVISONE_DEVICE", "auto")
 BATCH_LIMIT = _positiveIntEnv("WEVISONE_BATCH_LIMIT", 16)
 MIN_PIXELS = _positiveIntEnv("WEVISONE_MIN_PIXELS", 16 * 32 * 32)
-MAX_PIXELS = _positiveIntEnv("WEVISONE_MAX_PIXELS", 640 * 32 * 32)
-DECODER_BATCH_SIZE = _positiveIntEnv("WEVISONE_DECODER_BATCH_SIZE", 4)
-CNN_SIZE = _positiveIntEnv("WEVISONE_CNN_SIZE", 768)
+MAX_PIXELS = _positiveIntEnv("WEVISONE_MAX_PIXELS", 320 * 32 * 32)
+DECODER_BATCH_SIZE = _positiveIntEnv("WEVISONE_DECODER_BATCH_SIZE", 1)
+CNN_SIZE = _positiveIntEnv("WEVISONE_CNN_SIZE", 512)
 LOG_LEVEL = _resolveLogLevel(os.environ.get("WEVISONE_LOG_LEVEL", "INFO"))
 
 ToolName = Literal[
@@ -231,7 +230,7 @@ def _writeRequestLog(
 
 def _getEngine() -> WeVisOneVL:
     """Load & cache the shared engine on first use."""
-    if not getattr(_getEngine, "engine"):
+    if not getattr(_getEngine, "engine", None):
         logger.info("Loading %s (backend=%s, device=%s)", MODEL_ID, BACKEND, DEVICE)
         _getEngine.engine = WeVisOneVL(
             MODEL_ID,
