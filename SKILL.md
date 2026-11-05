@@ -1,8 +1,8 @@
 ---
-name: wevisone-vl-mcp
+name: wevisone
 description: Use WeVisOne-VL image perception tools via MCP.
 version: 0.1.0
-author: faizsahmed, 
+author: faizsahmed, DeepSeek V4.1 Flash + OpenCode + JetBrains Air
 license: MIT
 platforms: [linux, macos, windows]
 metadata:

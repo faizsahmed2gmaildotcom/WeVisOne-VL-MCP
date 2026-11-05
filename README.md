@@ -14,8 +14,10 @@ model is loaded for the call and released before the call returns.
 ### 1. Install the Python environment
 
 The server needs Python 3.10 or newer, the project dependencies, and the MCP
-packages. A CUDA-capable GPU is strongly recommended; the 2B model needs about
-4.7 GB of VRAM.
+packages. From testing, keep ~8GB RAM free if using the 2B model.
+
+Although a CUDA GPU is reccomended, using the CPU is much slower. But it isn't
+unrealistically slow.
 
 ```bash
 git clone https://github.com/faizsahmed2gmaildotcom/WeVisOne-VL-MCP.git
@@ -35,7 +37,7 @@ python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_
 ```
 
 If that prints `False`, install the CUDA build of torch for your driver before
-registering the server. CPU inference works but is very slow.
+registering the server. CPU inference works but is slower.
 
 ### 2. Configure the server
 
