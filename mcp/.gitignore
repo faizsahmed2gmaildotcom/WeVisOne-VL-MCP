@@ -30,6 +30,7 @@ tools/
 
 # MCP server runtime state.
 .env
+.cache.lock
 logs/*
 !logs/.gitkeep
 wevisone_vl_outputs/

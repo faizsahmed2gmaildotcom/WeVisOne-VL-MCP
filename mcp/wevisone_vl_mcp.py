@@ -7,9 +7,11 @@ import gc
 import json
 import logging
 import os
+import subprocess
 import sys
 import sysconfig
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -27,6 +29,8 @@ from pydantic import BaseModel, Field
 PROJECT_ROOT = Path(__file__).resolve().parent
 LOG_DIR = PROJECT_ROOT / "logs"
 LOG_PATH = LOG_DIR / "requests.jsonl"
+CACHE_LOCK_PATH = PROJECT_ROOT / ".cache.lock"
+CACHE_DOWNLOADER = PROJECT_ROOT / "cache_model.py"
 OUTPUT_ROOT_NAME = "wevisone_vl_outputs"
 DEFAULT_MODEL_ID = "tencent/WeVisOne-VL-2B"
 PIXEL_TOOLS = ("segmentation", "matting")
@@ -228,9 +232,184 @@ def _writeRequestLog(
             )
 
 
+def _modelCached() -> bool:
+    """Return whether the selected model is fully available locally."""
+    model_path = Path(MODEL_ID).expanduser()
+    if model_path.is_dir():
+        snapshot = model_path
+    else:
+        try:
+            from huggingface_hub import snapshot_download
+
+            snapshot = Path(snapshot_download(MODEL_ID, local_files_only=True))
+        except Exception:
+            return False
+
+    if not snapshot.is_dir():
+        return False
+    if not (snapshot / "config.json").is_file():
+        return False
+    if not (snapshot / "mask_decoder.pt").is_file():
+        return False
+
+    has_weights = any(
+        (snapshot / name).is_file()
+        for name in (
+            "model.safetensors",
+            "pytorch_model.bin",
+            "model.safetensors.index.json",
+            "pytorch_model.bin.index.json",
+        )
+    ) or any(snapshot.glob("model-*.safetensors")) or any(
+        snapshot.glob("pytorch_model-*.bin")
+    )
+    if not has_weights:
+        return False
+
+    for path in snapshot.iterdir():
+        if path.is_symlink() and not path.exists():
+            return False
+    return True
+
+
+def _readLock() -> tuple[int | None, int | None, str]:
+    """Read pid, starttime and model id from the cache lock."""
+    try:
+        lines = CACHE_LOCK_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None, None, ""
+    pid = int(lines[0]) if lines and lines[0].isdigit() else None
+    starttime = int(lines[1]) if len(lines) > 1 and lines[1].isdigit() else None
+    model = lines[2].strip() if len(lines) > 2 else ""
+    return pid, starttime, model
+
+
+def _processStarttime(pid: int) -> int | None:
+    """Return the Linux process starttime, or None if unavailable."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    # The command name is wrapped in parentheses and may contain spaces.
+    after_comm = stat.rsplit(")", 1)[-1].split()
+    # Field 22 in /proc/PID/stat is starttime (1-based); after_comm starts at field 3.
+    if len(after_comm) < 20:
+        return None
+    try:
+        return int(after_comm[19])
+    except (TypeError, ValueError):
+        return None
+
+
+def _processStatus(pid: int | None, starttime: int | None) -> str:
+    """Return 'running' or 'dead' for a Linux process."""
+    if pid is None or pid <= 0:
+        return "dead"
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "dead"
+    except PermissionError:
+        return "running"
+    actual_starttime = _processStarttime(pid)
+    if actual_starttime is None:
+        # /proc is unavailable or the process vanished; treat as dead.
+        return "dead"
+    if starttime is not None and actual_starttime != starttime:
+        return "dead"
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except OSError:
+        return "dead"
+    state = stat.rsplit(")", 1)[-1].split()[0]
+    if state == "Z":
+        return "dead"
+    return "running"
+
+
+def _removeCacheLock() -> None:
+    """Best-effort removal of a stale cache lock."""
+    try:
+        CACHE_LOCK_PATH.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _ensureModelCached() -> None:
+    """Ensure the model is cached, launching a background downloader if needed."""
+    if _modelCached():
+        _removeCacheLock()
+        return
+
+    model_path = Path(MODEL_ID).expanduser()
+    if model_path.is_dir():
+        raise ToolError(f"WeVisOne-VL model is not available: {MODEL_ID}")
+
+    pid, starttime, _ = _readLock()
+    if CACHE_LOCK_PATH.exists():
+        status = _processStatus(pid, starttime)
+        if status == "running":
+            raise ToolError(
+                f"WeVisOne-VL model {MODEL_ID!r} is still being downloaded "
+                f"(PID {pid}); try again later."
+            )
+        _removeCacheLock()
+
+    try:
+        fd = os.open(CACHE_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        # Another caller won the race; let the next call observe it.
+        return _ensureModelCached()
+
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        log_path = LOG_DIR / "cache_model.log"
+        with log_path.open("a", encoding="utf-8") as log_file:
+            process = subprocess.Popen(
+                [sys.executable, str(CACHE_DOWNLOADER), MODEL_ID],
+                stdin=subprocess.DEVNULL,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+            )
+        process_starttime = _processStarttime(process.pid)
+        # The process may exit very quickly in unexpected cases; retry briefly.
+        for _ in range(20):
+            if process_starttime is not None:
+                break
+            time.sleep(0.05)
+            process_starttime = _processStarttime(process.pid)
+        os.write(
+            fd,
+            (
+                f"{process.pid}\n"
+                f"{process_starttime if process_starttime is not None else 0}\n"
+                f"{MODEL_ID}\n"
+            ).encode("utf-8"),
+        )
+        os.close(fd)
+        fd = -1
+    except Exception:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        _removeCacheLock()
+        raise
+
+    raise ToolError(
+        f"WeVisOne-VL model {MODEL_ID!r} is not cached; downloading in the "
+        f"background (PID {process.pid}). Try again later."
+    )
+
+
 def _getEngine() -> WeVisOneVL:
     """Load & cache the shared engine on first use."""
     if not getattr(_getEngine, "engine", None):
+        _ensureModelCached()
+        logger.info("Loading %s (backend=%s, device=%s)", MODEL_ID, BACKEND, DEVICE)
         logger.info("Loading %s (backend=%s, device=%s)", MODEL_ID, BACKEND, DEVICE)
         _getEngine.engine = WeVisOneVL(
             MODEL_ID,
