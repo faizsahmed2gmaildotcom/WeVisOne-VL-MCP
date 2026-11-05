@@ -91,8 +91,8 @@ User scope, from a terminal:
 ```bash
 claude mcp add --scope user --transport stdio \
   wevisone-vl -- \
-  /opt/wevisone-vl-mcp/bin/python \
-  /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py
+  "$WEVISONE_PYTHON" \
+  "$WEVISONE_SERVER"
 ```
 
 Or add a project-scoped `.mcp.json` at the repository you want the agent to work
@@ -103,8 +103,8 @@ in:
   "mcpServers": {
     "wevisone-vl": {
       "type": "stdio",
-      "command": "/opt/wevisone-vl-mcp/bin/python",
-      "args": ["/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"],
+      "command": "$WEVISONE_PYTHON",
+      "args": ["$WEVISONE_SERVER"],
       "timeout": 600000
     }
   }
@@ -118,8 +118,8 @@ in milliseconds.
 
 ```bash
 codex mcp add wevisone-vl -- \
-  /opt/wevisone-vl-mcp/bin/python \
-  /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py
+  "$WEVISONE_PYTHON" \
+  "$WEVISONE_SERVER"
 ```
 
 The CLI creates the entry with Codex's default timeout. Add the timeout keys
@@ -127,8 +127,8 @@ below to `~/.codex/config.toml`, or write the whole entry there directly:
 
 ```toml
 [mcp_servers.wevisone-vl]
-command = "/opt/wevisone-vl-mcp/bin/python"
-args = ["/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"]
+command = "$WEVISONE_PYTHON"
+args = ["$WEVISONE_SERVER"]
 startup_timeout_sec = 60
 tool_timeout_sec = 600
 ```
@@ -148,8 +148,8 @@ Add the server to `opencode.json` at the project root, or to the global
     "wevisone-vl": {
       "type": "local",
       "command": [
-        "/opt/wevisone-vl-mcp/bin/python",
-        "/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"
+        "$WEVISONE_PYTHON",
+        "$WEVISONE_SERVER"
       ],
       "enabled": true,
       "timeout": 600000
@@ -169,8 +169,8 @@ Stop the Gateway before changing its MCP registry, then add the server:
 openclaw gateway stop
 
 openclaw mcp add wevisone-vl \
-  --command /opt/wevisone-vl-mcp/bin/python \
-  --arg /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py \
+  --command "$WEVISONE_PYTHON" \
+  --arg "$WEVISONE_SERVER" \
   --cwd /absolute/path/to/your/workspace \
   --timeout 600 \
   --connect-timeout 120
@@ -187,8 +187,8 @@ Or edit `~/.openclaw/openclaw.json` (JSON5):
       "wevisone-vl": {
         transport: "stdio",
         enabled: true,
-        command: "/opt/wevisone-vl-mcp/bin/python",
-        args: ["/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"],
+        command: "$WEVISONE_PYTHON",
+        args: ["$WEVISONE_SERVER"],
         cwd: "/absolute/path/to/your/workspace",
         connectionTimeoutMs: 120000,
         requestTimeoutMs: 600000
@@ -208,9 +208,9 @@ Add the server under `mcp_servers` in `~/.hermes/config.yaml`:
 ```yaml
 mcp_servers:
   wevisone-vl:
-    command: "/opt/wevisone-vl-mcp/bin/python"
+    command: "$WEVISONE_PYTHON"
     args:
-      - "/srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py"
+      - "$WEVISONE_SERVER"
     timeout: 600
     connect_timeout: 120
     env:
@@ -221,8 +221,8 @@ Alternatively:
 
 ```bash
 hermes mcp add wevisone-vl \
-  --command /opt/wevisone-vl-mcp/bin/python \
-  --args /srv/WeVisOne-VL-MCP/mcp/wevisone_vl_mcp.py
+  --command "$WEVISONE_PYTHON" \
+  --args "$WEVISONE_SERVER"
 ```
 
 Restart Hermes, then check with `hermes mcp test wevisone-vl`. Hermes starts the
